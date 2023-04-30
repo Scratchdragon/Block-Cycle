@@ -36,6 +36,11 @@ typedef struct shield {
     line lines[MAX_COLLISION_LINES];
 } shield;
 
+typedef struct bonus {
+    const char * name;
+    int reward;
+} bonus;
+
 // Shield variables
 shield current_shield;              // The currently selected shield
 shield shields[SHIELD_COUNT];       // All of the shield types
@@ -69,10 +74,34 @@ Vector2 center;             // Center of the window
 Rectangle player_rect;      // The players bounding rectangle
 bool died = false;          // If the player has died
 float rotation = 0;         // Player rotation (degrees)
-long score = 0;             // The players current score
 Texture2D player_tex[4];    // All of the players textures
 int sprite = 0;             // The index of the players current texture
 
+// Other textures
+Texture2D coin;
+
+// Scoring + money variables
+long coins = 0;         // How many coins the player has
+long score = 0;         // The players current score
+bonus bonuses[] = {     // Moves that can grant the player coins
+    {"Close call", 10},
+    {"Double kill", 5},
+    {"Triple kill", 5},
+    {"Multi kill", 10},
+    {"Milestone", 20},
+    {"New enemy", 20}
+};
+bonus latest_bonus;     // The latest bonus gained by the player
+double bonus_time = 2;  // How long to display the bonus
+double kill_timer = 0;  // How long between kills (for kill based rewards)
+int bonus_id;           // The id of the latest bonus
+
+void get_bonus(int id) {
+    bonus_id = id;
+    latest_bonus = bonuses[id];
+    bonus_time = 0;
+    coins += latest_bonus.reward;
+}
 
 // Rotates a point around the 0,0 point
 inline Vector2 rotate_point(Vector2 point, float rotation) {
@@ -163,7 +192,7 @@ void update_enemy(enemy * enemy_ptr, float deltat, float scale) {
     enemy_ptr->position.y += cos(enemy_ptr->rotation) * deltat * enemy_ptr->speed * scale;
 
     // Check collision
-    if(CheckCollisionRecs(enemy_ptr->bounds, player_rect))
+    if(CheckCollisionRecs(enemy_ptr->bounds, player_rect) && enemy_ptr->state != 2)
         died = true;
     
     // Check shield collision
@@ -197,6 +226,22 @@ void update_enemy(enemy * enemy_ptr, float deltat, float scale) {
         }
         else {
             enemy_ptr->state = 1;
+            
+            // Check for bonuses
+            if(sqrtf(pow(center.x - enemy_ptr->position.x, 2) + pow(center.y - enemy_ptr->position.y, 2)) < scale * 3)
+                get_bonus(0); // Close call
+
+            if(kill_timer < 0.3) {
+                if(bonus_time > 2)
+                    get_bonus(1);
+                else if(bonus_id == 1)
+                    get_bonus(2);
+                else if(bonus_id == 2 || bonus_id == 3)
+                    get_bonus(3);
+                else
+                    get_bonus(1);
+            }
+            kill_timer = 0;
         }
     }
 
@@ -207,6 +252,7 @@ void update_enemy(enemy * enemy_ptr, float deltat, float scale) {
                 enemy_ptr->timer += deltat;
                 enemy_ptr->rotation += deltat * PI / 2;
                 if(enemy_ptr->timer >= 2) {
+                    enemy_ptr->timer = 0;
                     enemy_ptr->state = 4;
                     enemy_ptr->rotation = atan2(center.x - enemy_ptr->position.x, center.y - enemy_ptr->position.y);
                 }
@@ -345,13 +391,11 @@ void render(float scale, float deltat) {
         (Rectangle) {
             center.x,
             center.y,
-            current_shield.texture.width * scale / 100,
-            current_shield.texture.height * scale / 100
+            scale * 8,
+            scale * 4
         },
-        // Set the origin to the players location to rotate around them
         (Vector2){
-            - scale * 2,
-            current_shield.texture.height * scale / 200
+            scale * 4, scale * 2
         },
         rotation - 90,
         WHITE
@@ -363,9 +407,35 @@ void render(float scale, float deltat) {
 
 
     // Draw UI
-    char str_score[255];
-    sprintf(str_score, "%d", score);
-    DrawText(str_score, scale / 2, scale / 2, scale * 2, BLACK);
+    char str[255]; // Temp string for converting int to string
+    sprintf(str, "%d", score);
+    DrawText(str, scale / 2, scale / 2, scale * 2, BLACK);
+
+    // Draw money
+    sprintf(str, "%d", coins);
+    DrawText(str, window_size.x - (TextLength(str) + 3) * scale, scale / 2, scale * 2, BLACK);
+    DrawTextureEx(coin, (Vector2){window_size.x - scale * 2.5, scale / 1.9}, 0, scale / 5, WHITE);
+
+    // Draw bonus
+    if(bonus_time < 2) {
+        // Convert the bonus' reward to as string
+        sprintf(str, "%d", latest_bonus.reward);
+
+        // Concatenate all the string together
+        const char * tokens[] = {
+            "+", str, " ", latest_bonus.name
+        };
+        const char * bonus_str = TextJoin(tokens, 4, "");
+
+        // Draw the final string
+        DrawText(
+            bonus_str, 
+            window_size.x - (TextLength(bonus_str)) * scale / 2, 
+            scale * 2.5, scale, 
+            (Color){200, 200, 200, (unsigned char)(255 - 120 * bonus_time)}
+        );
+    }
+    bonus_time += deltat;
 }
 
 int main() {
@@ -403,6 +473,9 @@ int main() {
 
     // Load al the enemy textures
     enemy_tex = LoadTexture("resources/images/enemies/enemy.png");
+    
+    // Load other textures
+    coin = LoadTexture("resources/images/coin.png");
 
     // Scale of objects on the window
     float scale;
@@ -427,7 +500,8 @@ int main() {
         scale = sqrt(pow(window_size.x, 2) + pow(window_size.y, 2)) / 50;
 
         // Look at the mouse
-        rotation = 180 - round((atan2(GetMousePosition().x - center.x, GetMousePosition().y - center.y) / 3.1415)*180);
+        if(!died)
+            rotation = 180 - round((atan2(GetMousePosition().x - center.x, GetMousePosition().y - center.y) / 3.1415)*180);
 
         // Get the players sprite index
         sprite = (int)round(rotation / 90) % 4;
@@ -436,6 +510,9 @@ int main() {
             spawn_enemy(GetRandomValue(1, ENEMY_TYPES));
         }
         old_time = GetTime();
+
+        // Increment the kill timer
+        kill_timer += deltat;
 
         // If score is -1 then reset
         if(score == -1) {

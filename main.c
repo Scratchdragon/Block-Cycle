@@ -12,7 +12,7 @@
 #define SHIELD_COUNT 1          // The amount of shield types
 
 // The enemy structure
-typedef struct enemy {
+typedef struct Enemy {
     // ID 0 means dead
     char id;
     Vector2 position;
@@ -22,33 +22,33 @@ typedef struct enemy {
 
     float timer;
     int state;
-} enemy;
+} Enemy;
 
 // Basic line structure
-typedef struct line {
+typedef struct Line {
     Vector2 a;
     Vector2 b;
-} line;
+} Line;
 
 // The shield structure
-typedef struct shield {
+typedef struct Shield {
     Texture2D texture;
-    line lines[MAX_COLLISION_LINES];
-} shield;
+    Line lines[MAX_COLLISION_LINES];
+} Shield;
 
-typedef struct bonus {
+typedef struct Bonus {
     const char * name;
     int reward;
-} bonus;
+} Bonus;
 
 // Shield variables
-shield current_shield;              // The currently selected shield
-shield shields[SHIELD_COUNT];       // All of the shield types
+Shield currentShield;              // The currently selected shield
+Shield shields[SHIELD_COUNT];       // All of the shield types
 
 // Enemy variables
-enemy enemies[MAX_ENEMIES];         // All present enemies
-Texture2D enemy_tex;                // The enemy texture
-Vector3 enemy_colors[ENEMY_TYPES]={ // The enemy colors
+Enemy enemies[MAX_ENEMIES];         // All present enemies
+Texture2D enemyTex;                // The enemy texture
+Vector3 enemyColors[ENEMY_TYPES]={ // The enemy colors
     (Vector3){
         0,
         0,
@@ -67,23 +67,24 @@ Vector3 enemy_colors[ENEMY_TYPES]={ // The enemy colors
 };
 
 // Window variables
-Vector2 window_size;        // Window size
+Vector2 windowSize;        // Window size
 Vector2 center;             // Center of the window
 
 // Player variables
-Rectangle player_rect;      // The players bounding rectangle
+Rectangle playerRect;      // The players bounding rectangle
 bool died = false;          // If the player has died
 float rotation = 0;         // Player rotation (degrees)
-Texture2D player_tex[4];    // All of the players textures
+Texture2D playerTex[4];    // All of the players textures
 int sprite = 0;             // The index of the players current texture
 
 // Other textures
 Texture2D coin;
+Texture2D arrow;
 
 // Scoring + money variables
 long coins = 0;         // How many coins the player has
 long score = 0;         // The players current score
-bonus bonuses[] = {     // Moves that can grant the player coins
+Bonus bonuses[] = {     // Moves that can grant the player coins
     {"Close call", 10},
     {"Double kill", 5},
     {"Triple kill", 5},
@@ -91,20 +92,24 @@ bonus bonuses[] = {     // Moves that can grant the player coins
     {"Milestone", 20},
     {"New enemy", 20}
 };
-bonus latest_bonus;     // The latest bonus gained by the player
-double bonus_time = 2;  // How long to display the bonus
-double kill_timer = 0;  // How long between kills (for kill based rewards)
-int bonus_id;           // The id of the latest bonus
+Bonus latestBonus;      // The latest bonus gained by the player
+double bonusTime = 2;   // How long to display the bonus
+double killTimer = 0;   // How long between kills (for kill based rewards)
+int bonusId;            // The id of the latest bonus
 
-void get_bonus(int id) {
-    bonus_id = id;
-    latest_bonus = bonuses[id];
-    bonus_time = 0;
-    coins += latest_bonus.reward;
+// Shop variables
+bool shop = false;      // If the player is in the shop
+double shopTimer = 0;    // Time since shop opened (For animations)
+
+void GetBonus(int id) {
+    bonusId = id;
+    latestBonus = bonuses[id];
+    bonusTime = 0;
+    coins += latestBonus.reward;
 }
 
 // Rotates a point around the 0,0 point
-inline Vector2 rotate_point(Vector2 point, float rotation) {
+inline Vector2 RotatePoint(Vector2 point, float rotation) {
     return (Vector2){
         cos(rotation) * point.x - sin(rotation) * point.y,
         sin(rotation) * point.x + cos(rotation) * point.y
@@ -112,15 +117,15 @@ inline Vector2 rotate_point(Vector2 point, float rotation) {
 }
 
 // Rotates a line around the 0,0 point
-inline line rotate_line(line l, float rotation) {
-    return (line) {
-        rotate_point(l.a, rotation),
-        rotate_point(l.b, rotation)
+inline Line RotateLine(Line l, float rotation) {
+    return (Line) {
+        RotatePoint(l.a, rotation),
+        RotatePoint(l.b, rotation)
     };
 }
 
 // Checks if two lines are intersecting
-inline bool line_collision(line a, line b) {
+inline bool LineCollision(Line a, Line b) {
     Vector2 point;
     return CheckCollisionLines(
         a.a,
@@ -132,9 +137,9 @@ inline bool line_collision(line a, line b) {
 }
 
 // Checks if a line and rectangle intersect
-bool line_rect_collision(line a, Rectangle b) {
+bool LineRectCollision(Line a, Rectangle b) {
     // Turn the rect into an array of lines
-    line rect[] = {
+    Line rect[] = {
         {
             {b.x, b.y},
             {b.x, b.y + b.height}
@@ -155,22 +160,22 @@ bool line_rect_collision(line a, Rectangle b) {
 
     // Check each line
     for(int i = 0; i < 4; ++i) {
-        if(line_collision(rect[i], a))
+        if(LineCollision(rect[i], a))
             return true;
     }
     return false;
 }
 
 // Enemy update method
-void update_enemy(enemy * enemy_ptr, float deltat, float scale) {
+void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
     // Fade out a dieing enemy
-    if(enemy_ptr->state == 1) {
+    if(enemyPtr->state == 1) {
         // Increment the timer
-        enemy_ptr->timer += deltat;
+        enemyPtr->timer += deltaTime;
 
         // Delete enemy when 0.5s is elapsed
-        if(enemy_ptr->timer > 0.5f) {
-            enemy_ptr->id = 0;
+        if(enemyPtr->timer > 0.5f) {
+            enemyPtr->id = 0;
 
             // If player died then reset
             if(died) {
@@ -186,85 +191,85 @@ void update_enemy(enemy * enemy_ptr, float deltat, float scale) {
     
     // Kill the enemy if the player died
     if(died)
-        enemy_ptr->state = 1;
+        enemyPtr->state = 1;
 
-    enemy_ptr->position.x += sin(enemy_ptr->rotation) * deltat * enemy_ptr->speed * scale;
-    enemy_ptr->position.y += cos(enemy_ptr->rotation) * deltat * enemy_ptr->speed * scale;
+    enemyPtr->position.x += sin(enemyPtr->rotation) * deltaTime * enemyPtr->speed * scale;
+    enemyPtr->position.y += cos(enemyPtr->rotation) * deltaTime * enemyPtr->speed * scale;
 
     // Check collision
-    if(CheckCollisionRecs(enemy_ptr->bounds, player_rect) && enemy_ptr->state != 2)
+    if(CheckCollisionRecs(enemyPtr->bounds, playerRect) && enemyPtr->state != 2)
         died = true;
     
     // Check shield collision
     bool collide = false;
     for(int i = 0; i < MAX_COLLISION_LINES; ++i) {
         // Make sure the shields collision is rotated
-        line rotated_line = rotate_line(current_shield.lines[i], (rotation + 270) * DEG2RAD);
-        rotated_line.a.x *= scale;
-        rotated_line.a.y *= scale;
-        rotated_line.b.x *= scale;
-        rotated_line.b.y *= scale;
-        rotated_line.a.x += center.x;
-        rotated_line.a.y += center.y;
-        rotated_line.b.x += center.x;
-        rotated_line.b.y += center.y;
+        Line rotatedLine = RotateLine(currentShield.lines[i], (rotation + 270) * DEG2RAD);
+        rotatedLine.a.x *= scale;
+        rotatedLine.a.y *= scale;
+        rotatedLine.b.x *= scale;
+        rotatedLine.b.y *= scale;
+        rotatedLine.a.x += center.x;
+        rotatedLine.a.y += center.y;
+        rotatedLine.b.x += center.x;
+        rotatedLine.b.y += center.y;
 
         if(DEBUG)
-            DrawLineEx(rotated_line.a, rotated_line.b, 1, BLUE);
+            DrawLineEx(rotatedLine.a, rotatedLine.b, 1, BLUE);
 
         // Check if colliding with shield
-        if(line_rect_collision(rotated_line, enemy_ptr->bounds)) {
+        if(LineRectCollision(rotatedLine, enemyPtr->bounds)) {
             collide = true;
             break;
         }
     }
     if(collide) {
-        if(enemy_ptr->id == 3 && enemy_ptr->state != 4) {
-            if(enemy_ptr->state != 2)
-                enemy_ptr->rotation = -enemy_ptr->rotation;
-            enemy_ptr->state = 2;
+        if(enemyPtr->id == 3 && enemyPtr->state != 4) {
+            if(enemyPtr->state != 2)
+                enemyPtr->rotation = -enemyPtr->rotation;
+            enemyPtr->state = 2;
         }
         else {
-            enemy_ptr->state = 1;
+            enemyPtr->state = 1;
             
             // Check for bonuses
-            if(sqrtf(pow(center.x - enemy_ptr->position.x, 2) + pow(center.y - enemy_ptr->position.y, 2)) < scale * 3)
-                get_bonus(0); // Close call
+            if(sqrtf(pow(center.x - enemyPtr->position.x, 2) + pow(center.y - enemyPtr->position.y, 2)) < scale * 3)
+                GetBonus(0); // Close call
 
-            if(kill_timer < 0.3) {
-                if(bonus_time > 2)
-                    get_bonus(1);
-                else if(bonus_id == 1)
-                    get_bonus(2);
-                else if(bonus_id == 2 || bonus_id == 3)
-                    get_bonus(3);
+            if(killTimer < 0.3) {
+                if(bonusTime > 2)
+                    GetBonus(1);
+                else if(bonusId == 1)
+                    GetBonus(2);
+                else if(bonusId == 2 || bonusId == 3)
+                    GetBonus(3);
                 else
-                    get_bonus(1);
+                    GetBonus(1);
             }
-            kill_timer = 0;
+            killTimer = 0;
         }
     }
 
     // Per enemy types actions
-    switch(enemy_ptr->id) {
+    switch(enemyPtr->id) {
         case 3:
-            if(enemy_ptr->state == 2) {
-                enemy_ptr->timer += deltat;
-                enemy_ptr->rotation += deltat * PI / 2;
-                if(enemy_ptr->timer >= 2) {
-                    enemy_ptr->timer = 0;
-                    enemy_ptr->state = 4;
-                    enemy_ptr->rotation = atan2(center.x - enemy_ptr->position.x, center.y - enemy_ptr->position.y);
+            if(enemyPtr->state == 2) {
+                enemyPtr->timer += deltaTime;
+                enemyPtr->rotation += deltaTime * PI / 2;
+                if(enemyPtr->timer >= 2) {
+                    enemyPtr->timer = 0;
+                    enemyPtr->state = 4;
+                    enemyPtr->rotation = atan2(center.x - enemyPtr->position.x, center.y - enemyPtr->position.y);
                 }
             }
             break;
     }
 }
 
-void spawn_enemy(int id) {
+void SpawnEnemy(int id) {
     // Find a free space for the enemy
     int index;
-    for(index = 0;index<MAX_ENEMIES;++index) {
+    for(index = 0; index<MAX_ENEMIES; ++index) {
         // Break when a free space is found
         if(enemies[index].id == 0)
             break;
@@ -272,16 +277,16 @@ void spawn_enemy(int id) {
 
     // Calculate position
     Vector2 position = {
-        GetRandomValue(0, window_size.x),
-        GetRandomValue(0, window_size.y)
+        GetRandomValue(0, windowSize.x),
+        GetRandomValue(0, windowSize.y)
     };
     if (GetRandomValue(0, 1)) {
         // Horizontal wall
-        position.x = GetRandomValue(0, 1) * window_size.x;
+        position.x = GetRandomValue(0, 1) * windowSize.x;
     }
     else {
         // Vertical wall
-        position.y = GetRandomValue(0, 1) * window_size.y;
+        position.y = GetRandomValue(0, 1) * windowSize.y;
     }
 
     // Set the enemy
@@ -304,8 +309,41 @@ void spawn_enemy(int id) {
     }
 }
 
+// The DrawShop method contains all the code used to render the shop
+void DrawShop(float scale, float deltaTime) {
+    float xOffset = shopTimer > 0.2 ? 0 : windowSize.x - (shopTimer * windowSize.x * 5);
+    DrawRectangleRec(
+        (Rectangle) {
+            scale * 3 + xOffset,
+            scale * 3,
+            windowSize.x - scale * 6,
+            windowSize.y - scale * 6
+        },
+        WHITE
+    );
+    DrawRectangleLinesEx(
+        (Rectangle) {
+            scale * 3 + xOffset,
+            scale * 3,
+            windowSize.x - scale * 6,
+            windowSize.y - scale * 6
+        },
+        scale / 5,
+        BLACK
+    );
+
+    DrawText("S H O P", center.x + xOffset - scale * 4.2, scale * 4, scale * 2, BLACK);
+    DrawTextureEx(
+        arrow, 
+        (Vector2){windowSize.x - scale * 6.8 + xOffset, windowSize.y - scale * 6.8}, 
+        0,
+        scale / 12,
+        WHITE
+    );
+}
+
 // The render method should contain all rendering code
-void render(float scale, float deltat) {
+void Render(float scale, float deltaTime) {
     // Clear the screen
     ClearBackground(WHITE);
 
@@ -319,17 +357,17 @@ void render(float scale, float deltat) {
         Rectangle source = {
             0,
             0,
-            enemy_tex.width,
-            enemy_tex.height
+            enemyTex.width,
+            enemyTex.height
         };
 
         // Flip the sprite if looking left
         if(sin(enemies[i].rotation) < 0) {
             source = (Rectangle){
-                enemy_tex.width * 2,
+                enemyTex.width * 2,
                 0,
-                -enemy_tex.width,
-                enemy_tex.height
+                -enemyTex.width,
+                enemyTex.height
             };
         }
         
@@ -343,15 +381,15 @@ void render(float scale, float deltat) {
 
         // Render the enemy
         DrawTexturePro(
-            enemy_tex, 
+            enemyTex, 
             source,
             enemies[i].bounds,
             (Vector2){0, 0},
             0,
             (Color){
-                enemy_colors[enemies[i].id - 1].x,
-                enemy_colors[enemies[i].id - 1].y,
-                enemy_colors[enemies[i].id - 1].z,
+                enemyColors[enemies[i].id - 1].x,
+                enemyColors[enemies[i].id - 1].y,
+                enemyColors[enemies[i].id - 1].z,
                 enemies[i].state == 1 ? (unsigned char)((0.5f - enemies[i].timer) * 510) : 255
             }
         );
@@ -361,19 +399,20 @@ void render(float scale, float deltat) {
             DrawRectangleLinesEx(enemies[i].bounds, 1, RED);
         
         // Update the enemy here to save on time
-        update_enemy(&enemies[i], deltat, scale);
+        if(!shop)
+            UpdateEnemy(&enemies[i], deltaTime, scale);
     }
     
     // Draw the player
     DrawTexturePro(
-        player_tex[sprite], 
+        playerTex[sprite], 
         (Rectangle){
             0,
             0,
-            player_tex[sprite].width,
-            player_tex[sprite].height
+            playerTex[sprite].width,
+            playerTex[sprite].height
         },
-        player_rect,
+        playerRect,
         (Vector2){0, 0},
         0,
         WHITE
@@ -381,12 +420,12 @@ void render(float scale, float deltat) {
 
     // Draw the players shield
     DrawTexturePro(
-        current_shield.texture,
+        currentShield.texture,
         (Rectangle){
             0,
             0,
-            current_shield.texture.width,
-            current_shield.texture.height
+            currentShield.texture.width,
+            currentShield.texture.height
         },
         (Rectangle) {
             center.x,
@@ -403,7 +442,7 @@ void render(float scale, float deltat) {
     
     // Draw debug lines
     if(DEBUG)
-        DrawRectangleLinesEx(player_rect, 1, GREEN);
+        DrawRectangleLinesEx(playerRect, 1, GREEN);
 
 
     // Draw UI
@@ -413,91 +452,94 @@ void render(float scale, float deltat) {
 
     // Draw money
     sprintf(str, "%d", coins);
-    DrawText(str, window_size.x - (TextLength(str) + 3) * scale, scale / 2, scale * 2, BLACK);
-    DrawTextureEx(coin, (Vector2){window_size.x - scale * 2.5, scale / 1.9}, 0, scale / 5, WHITE);
+    DrawText(str, windowSize.x - (TextLength(str) + 3) * scale, scale / 2, scale * 2, BLACK);
+    DrawTextureEx(coin, (Vector2){windowSize.x - scale * 2.5, scale / 1.9}, 0, scale / 5, WHITE);
 
     // Draw bonus
-    if(bonus_time < 2) {
+    if(bonusTime < 2) {
         // Convert the bonus' reward to as string
-        sprintf(str, "%d", latest_bonus.reward);
+        sprintf(str, "%d", latestBonus.reward);
 
         // Concatenate all the string together
         const char * tokens[] = {
-            "+", str, " ", latest_bonus.name
+            "+", str, " ", latestBonus.name
         };
-        const char * bonus_str = TextJoin(tokens, 4, "");
+        const char * bonusStr = TextJoin(tokens, 4, "");
 
         // Draw the final string
         DrawText(
-            bonus_str, 
-            window_size.x - (TextLength(bonus_str)) * scale / 2, 
+            bonusStr, 
+            windowSize.x - (TextLength(bonusStr)) * scale / 2, 
             scale * 2.5, scale, 
-            (Color){200, 200, 200, (unsigned char)(255 - 120 * bonus_time)}
+            (Color){200, 200, 200, (unsigned char)(255 - 120 * bonusTime)}
         );
     }
-    bonus_time += deltat;
+
+    if(shopTimer > 0)
+        DrawShop(scale, deltaTime);
 }
 
 int main() {
     // The time of the last frame
-    float old_time;
+    float oldTime;
 
     // How many seconds until another enemy should spawn
-    float spawn_time = 2;
+    float spawnTime = 2;
 
     // Set the starting window size
-    window_size = (Vector2){800, 500};
+    windowSize = (Vector2){800, 500};
 
     // Init the window
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(window_size.x, window_size.y, "Block-Cycle");
+    InitWindow(windowSize.x, windowSize.y, "Block-Cycle");
 
     // Init all the shields
-    shields[0] = (shield){ // Basic shield
+    shields[0] = (Shield){ // Basic shield
         // Texture
         LoadTexture("resources/images/shield/basic.png"),
         // Collision lines
         {
-            (line){{2.2, -1.8}, {2.2, 1.8}}
+            (Line){{2.2, -1.8}, {2.2, 1.8}}
         }
     };
 
     // Set the default shield
-    current_shield = shields[0];
+    currentShield = shields[0];
 
     // Load all the player textures
-    player_tex[0] = LoadTexture("resources/images/up.png");
-    player_tex[1] = LoadTexture("resources/images/right.png");
-    player_tex[2] = LoadTexture("resources/images/down.png");
-    player_tex[3] = LoadTexture("resources/images/left.png");
+    playerTex[0] = LoadTexture("resources/images/up.png");
+    playerTex[1] = LoadTexture("resources/images/right.png");
+    playerTex[2] = LoadTexture("resources/images/down.png");
+    playerTex[3] = LoadTexture("resources/images/left.png");
 
     // Load al the enemy textures
-    enemy_tex = LoadTexture("resources/images/enemies/enemy.png");
+    enemyTex = LoadTexture("resources/images/enemies/enemy.png");
     
     // Load other textures
     coin = LoadTexture("resources/images/coin.png");
+    arrow = LoadTexture("resources/images/arrow.png");
 
     // Scale of objects on the window
     float scale;
 
     // Time inbetween frames
-    float deltat;
+    float deltaTime;
 
     // Main loop
     while(!WindowShouldClose()) {
         // Update window size
-        window_size.x = GetRenderWidth();
-        window_size.y = GetRenderHeight();
+        windowSize.x = GetRenderWidth();
+        windowSize.y = GetRenderHeight();
 
         // Update delta time
-        deltat = GetFrameTime();
+        deltaTime = GetFrameTime();
 
         // Get the window center
-        center.x = window_size.x / 2;
-        center.y = window_size.y / 2;
+        center.x = windowSize.x / 2;
+        center.y = windowSize.y / 2;
 
         // Update scale
-        scale = sqrt(pow(window_size.x, 2) + pow(window_size.y, 2)) / 50;
+        scale = sqrt(pow(windowSize.x, 2) + pow(windowSize.y, 2)) / 50;
 
         // Look at the mouse
         if(!died)
@@ -506,13 +548,24 @@ int main() {
         // Get the players sprite index
         sprite = (int)round(rotation / 90) % 4;
 
-        if(old_time / spawn_time < round(old_time / spawn_time) && GetTime() / spawn_time >= round(old_time / spawn_time)) {
-            spawn_enemy(GetRandomValue(1, ENEMY_TYPES));
-        }
-        old_time = GetTime();
+        // Check if the time has elapsed the next spawn interval (and if not in shop)
+        if(oldTime / spawnTime < round(oldTime / spawnTime) && GetTime() / spawnTime >= round(oldTime / spawnTime) && !shop)
+            SpawnEnemy(GetRandomValue(1, ENEMY_TYPES));
+        oldTime = GetTime();
 
-        // Increment the kill timer
-        kill_timer += deltat;
+        // Increment the timers
+        killTimer += deltaTime;
+        bonusTime += deltaTime;
+        if(shop)
+            shopTimer += deltaTime;
+        else if(shopTimer > 0) {
+            if(shopTimer > 0.2)
+                shopTimer = 0.2;
+            shopTimer -= deltaTime;
+        }
+
+        if(IsKeyReleased(KEY_SPACE))
+            shop = !shop;
 
         // If score is -1 then reset
         if(score == -1) {
@@ -525,7 +578,7 @@ int main() {
         }
 
         // Update the players bounding rectangle
-        player_rect = (Rectangle){
+        playerRect = (Rectangle){
             center.x - scale,
             center.y - scale,
             scale * 2,
@@ -534,14 +587,14 @@ int main() {
 
         // Draw everything
         BeginDrawing();
-        render(scale, deltat);
+        Render(scale, deltaTime);
         EndDrawing();
     }
 
     // Unload everything and close the window
     for(int i = 0; i < 4; ++i)
-        UnloadTexture(player_tex[i]);
-    UnloadTexture(enemy_tex);
+        UnloadTexture(playerTex[i]);
+    UnloadTexture(enemyTex);
     
     CloseWindow();
 }

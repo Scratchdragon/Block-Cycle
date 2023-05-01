@@ -3,13 +3,15 @@
 #include <stdio.h>
 #include <math.h>
 
-#define ENEMY_TYPES 3   // How many types of enemies there are
-#define MAX_ENEMIES 255 // Max amount of enemies allowed on screen
+#define ENEMY_TYPES 3           // How many types of enemies there are
+#define MAX_ENEMIES 255         // Max amount of enemies allowed on screen
 
-#define DEBUG 0         // Debug mode will show all bounding boxes
+#define DEBUG 0                 // Debug mode will show all bounding boxes
 
 #define MAX_COLLISION_LINES 4   // The max amount of collision lines a shield can have
-#define SHIELD_COUNT 1          // The amount of shield types
+#define SHIELD_COUNT 3          // The amount of shield types
+
+#define SHOP_ITEM_COUNT 2       // How many items in the shop
 
 // The enemy structure
 typedef struct Enemy {
@@ -36,10 +38,23 @@ typedef struct Shield {
     Line lines[MAX_COLLISION_LINES];
 } Shield;
 
+// Player bonus structure
 typedef struct Bonus {
     const char * name;
     int reward;
 } Bonus;
+
+// Shop items structure
+typedef struct ShopItem {
+    // Texture of item inside the shop
+    Texture2D texture;
+    // How many coins for item
+    int cost;
+    // Type can be 0 (shield) or 1 (heart)
+    int type;
+    // ID of the shield or quantity of the hearts
+    int id;
+} ShopItem;
 
 // Shield variables
 Shield currentShield;              // The currently selected shield
@@ -100,6 +115,7 @@ int bonusId;            // The id of the latest bonus
 // Shop variables
 bool shop = false;      // If the player is in the shop
 double shopTimer = 0;    // Time since shop opened (For animations)
+ShopItem shopItems[SHOP_ITEM_COUNT];
 
 void GetBonus(int id) {
     bonusId = id;
@@ -109,7 +125,7 @@ void GetBonus(int id) {
 }
 
 // Rotates a point around the 0,0 point
-inline Vector2 RotatePoint(Vector2 point, float rotation) {
+Vector2 RotatePoint(Vector2 point, float rotation) {
     return (Vector2){
         cos(rotation) * point.x - sin(rotation) * point.y,
         sin(rotation) * point.x + cos(rotation) * point.y
@@ -117,7 +133,7 @@ inline Vector2 RotatePoint(Vector2 point, float rotation) {
 }
 
 // Rotates a line around the 0,0 point
-inline Line RotateLine(Line l, float rotation) {
+Line RotateLine(Line l, float rotation) {
     return (Line) {
         RotatePoint(l.a, rotation),
         RotatePoint(l.b, rotation)
@@ -125,7 +141,7 @@ inline Line RotateLine(Line l, float rotation) {
 }
 
 // Checks if two lines are intersecting
-inline bool LineCollision(Line a, Line b) {
+bool LineCollision(Line a, Line b) {
     Vector2 point;
     return CheckCollisionLines(
         a.a,
@@ -311,7 +327,10 @@ void SpawnEnemy(int id) {
 
 // The DrawShop method contains all the code used to render the shop
 void DrawShop(float scale, float deltaTime) {
+    // Effecient way of doing a slide in/out animation
     float xOffset = shopTimer > 0.2 ? 0 : windowSize.x - (shopTimer * windowSize.x * 5);
+
+    // Draw the shops background
     DrawRectangleRec(
         (Rectangle) {
             scale * 3 + xOffset,
@@ -321,6 +340,8 @@ void DrawShop(float scale, float deltaTime) {
         },
         WHITE
     );
+
+    // Draw the shops border
     DrawRectangleLinesEx(
         (Rectangle) {
             scale * 3 + xOffset,
@@ -332,7 +353,8 @@ void DrawShop(float scale, float deltaTime) {
         BLACK
     );
 
-    DrawText("S H O P", center.x + xOffset - scale * 4.2, scale * 4, scale * 2, BLACK);
+    // Draw shop title and next page button
+    DrawText("S H O P", center.x + xOffset - scale * 3.6, scale * 4, scale * 2, BLACK);
     DrawTextureEx(
         arrow, 
         (Vector2){windowSize.x - scale * 6.8 + xOffset, windowSize.y - scale * 6.8}, 
@@ -340,6 +362,40 @@ void DrawShop(float scale, float deltaTime) {
         scale / 12,
         WHITE
     );
+
+    // Draw the shop items
+    for(int i = 0; i<SHOP_ITEM_COUNT && i<3; ++i) {
+        Vector2 position = (Vector2){
+            // Draw items relative to the center of the screen and offset image to be centered
+            center.x + (i-1) * scale * 13 - (shopItems[i].texture.width * scale / 20) + xOffset,
+            scale * 8
+        };
+        DrawTextureEx(
+            shopItems[i].texture,
+            position,
+            0,
+            scale / 10,
+            WHITE
+        );
+
+        // Check if the mouse is withen the shop items bounds
+        if(
+            GetMouseX() > position.x && 
+            GetMouseY() > position.y && 
+            GetMouseX() < position.x + shopItems[i].texture.width * scale / 10 && 
+            GetMouseY() < position.y + shopItems[i].texture.height * scale / 10
+        ) {
+            // Check if buying the item
+            if(IsMouseButtonReleased(0) && coins >= shopItems[i].cost) {
+                coins -= shopItems[i].cost;
+                switch(shopItems[i].type) {
+                    case 0: // Shield
+                        currentShield = shields[shopItems[i].id];
+                        break;
+                }
+            }
+        }
+    }
 }
 
 // The render method should contain all rendering code
@@ -499,7 +555,24 @@ int main() {
         LoadTexture("resources/images/shield/basic.png"),
         // Collision lines
         {
-            (Line){{2.2, -1.8}, {2.2, 1.8}}
+            (Line){{2.5, -1.6}, {2.5, 1.6}}
+        }
+    };
+    shields[1] = (Shield){ // Long shield
+        // Texture
+        LoadTexture("resources/images/shield/long.png"),
+        // Collision lines
+        {
+            (Line){{2.5, -2.2}, {2.5, 2.2}}
+        }
+    };
+    shields[2] = (Shield){ // Armor shield
+        // Texture
+        LoadTexture("resources/images/shield/armor.png"),
+        // Collision lines
+        {
+            (Line){{-1.4,  1.8}, {1.4, 1.8}},
+            (Line){{-1.4, -1.8}, {1.4, -1.8}}
         }
     };
 
@@ -518,6 +591,20 @@ int main() {
     // Load other textures
     coin = LoadTexture("resources/images/coin.png");
     arrow = LoadTexture("resources/images/arrow.png");
+
+    // Load shop items
+    shopItems[0] = (ShopItem){
+        LoadTexture("resources/images/shop/long_shield.png"),
+        10,
+        0,
+        1
+    };
+    shopItems[1] = (ShopItem){
+        LoadTexture("resources/images/shop/armor_shield.png"),
+        40,
+        0,
+        2
+    };
 
     // Scale of objects on the window
     float scale;
@@ -594,6 +681,10 @@ int main() {
     // Unload everything and close the window
     for(int i = 0; i < 4; ++i)
         UnloadTexture(playerTex[i]);
+    for(int i = 0; i < SHIELD_COUNT; ++i)
+        UnloadTexture(shields[i].texture);
+    for(int i = 0; i < SHOP_ITEM_COUNT; ++i)
+        UnloadTexture(shopItems[i].texture);
     UnloadTexture(enemyTex);
     
     CloseWindow();

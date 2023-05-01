@@ -1,5 +1,6 @@
 {
     "files.associations": {
         "raylib.h": "c"
-    }
+    },
+    "terminal.integrated.detectLocale": "auto"
 }

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <math.h>
 
-#define ENEMY_TYPES 3           // How many types of enemies there are
+#define ENEMY_TYPES 4           // How many types of enemies there are
 #define MAX_ENEMIES 255         // Max amount of enemies allowed on screen
 
 #define DEBUG 0                 // Debug mode will show all bounding boxes
@@ -57,13 +57,13 @@ typedef struct ShopItem {
 } ShopItem;
 
 // Shield variables
-Shield currentShield;              // The currently selected shield
+Shield currentShield;               // The currently selected shield
 Shield shields[SHIELD_COUNT];       // All of the shield types
 
 // Enemy variables
 Enemy enemies[MAX_ENEMIES];         // All present enemies
-Texture2D enemyTex;                // The enemy texture
-Vector3 enemyColors[ENEMY_TYPES]={ // The enemy colors
+Texture2D enemyTex;                 // The enemy texture
+Vector3 enemyColors[ENEMY_TYPES]={  // The enemy colors
     (Vector3){
         0,
         0,
@@ -78,18 +78,23 @@ Vector3 enemyColors[ENEMY_TYPES]={ // The enemy colors
         0,
         255,
         255
+    },
+    (Vector3){
+        255,
+        0,
+        255
     }
 };
 
 // Window variables
-Vector2 windowSize;        // Window size
+Vector2 windowSize;         // Window size
 Vector2 center;             // Center of the window
 
 // Player variables
-Rectangle playerRect;      // The players bounding rectangle
+Rectangle playerRect;       // The players bounding rectangle
 bool died = false;          // If the player has died
 float rotation = 0;         // Player rotation (degrees)
-Texture2D playerTex[4];    // All of the players textures
+Texture2D playerTex[4];     // All of the players textures
 int sprite = 0;             // The index of the players current texture
 
 // Other textures
@@ -111,10 +116,14 @@ Bonus latestBonus;      // The latest bonus gained by the player
 double bonusTime = 2;   // How long to display the bonus
 double killTimer = 0;   // How long between kills (for kill based rewards)
 int bonusId;            // The id of the latest bonus
+int enemyLevel = 0;     // The max enemy level
+int levelScores[ENEMY_TYPES] = {          // Each level's starting score
+    0, 5, 10, 40
+};
 
 // Shop variables
-bool shop = false;      // If the player is in the shop
-double shopTimer = 0;    // Time since shop opened (For animations)
+bool shop = false;          // If the player is in the shop
+double shopTimer = 0;       // Time since shop opened (For animations)
 ShopItem shopItems[SHOP_ITEM_COUNT];
 
 void GetBonus(int id) {
@@ -182,10 +191,89 @@ bool LineRectCollision(Line a, Rectangle b) {
     return false;
 }
 
+// SpawnEnemy is used to create new enemies, it return the new enemy's index
+int SpawnEnemy(int id, int state) {
+    // Find a free space for the enemy
+    int index;
+    for(index = 0; index<MAX_ENEMIES; ++index) {
+        // Break when a free space is found
+        if(enemies[index].id == 0)
+            break;
+    }
+
+    // Calculate position
+    Vector2 position = {
+        GetRandomValue(0, windowSize.x),
+        GetRandomValue(0, windowSize.y)
+    };
+    if (GetRandomValue(0, 1)) {
+        // Horizontal wall
+        position.x = GetRandomValue(0, 1) * windowSize.x;
+    }
+    else {
+        // Vertical wall
+        position.y = GetRandomValue(0, 1) * windowSize.y;
+    }
+
+    // Set the enemy
+    enemies[index].id = id;
+    enemies[index].speed = 8;
+    enemies[index].position = position;
+    enemies[index].state = state;
+    enemies[index].timer = 0;
+    enemies[index].rotation = atan2(center.x - position.x, center.y - position.y);
+
+    // Do enemy specific customization
+    switch(id) {
+        case 2:
+            enemies[index].speed = 16;
+            break;
+        default:
+            break;
+    }
+    return index;
+}
+
+// Spawns enemy without a provided state
+int SpawnDefaultEnemy(int id) {
+    return SpawnEnemy(id, 0);
+}
+
+// Changes the score and updates enemy level
+void SetScore(int newScore) {
+    // Set the score
+    score = newScore;
+
+    // Reset enemy level on score reset
+    if(score <= 0) {
+        enemyLevel = 0;
+        return;
+    }
+
+    // Update the enemy level
+    for(int i = 0; i < ENEMY_TYPES; ++i) {
+        if(levelScores[i] == score)
+            enemyLevel = i;
+    }
+}
+
 // Enemy update method
 void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
     // Fade out a dieing enemy
     if(enemyPtr->state == 1) {
+        // Split if a normal purple enemy (not small)
+        if(enemyPtr->id == 4 && enemyPtr->timer == 0) {
+            // Spawn three small slimes
+            for(int i = 0; i < 3; ++i) {
+                int enemyIndex = SpawnEnemy(4, 2);
+                enemies[enemyIndex].position = enemyPtr->position;
+                enemies[enemyIndex].rotation = -enemyPtr->rotation + (float)GetRandomValue(-10, 10) / 50.0f;
+                enemies[enemyIndex].timer = (float)GetRandomValue(10, 18) / 10.0f;
+            }
+            enemyPtr->id = 0;
+            return;
+        }
+
         // Increment the timer
         enemyPtr->timer += deltaTime;
 
@@ -195,12 +283,12 @@ void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
 
             // If player died then reset
             if(died) {
-                score = -1; // Score -1 means to reset
+                SetScore(-1); // Score -1 means to reset
                 return;
             }
 
             // Increment the players score
-            ++score;
+            SetScore(score + 1);
         }
         return;
     }
@@ -211,6 +299,24 @@ void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
 
     enemyPtr->position.x += sin(enemyPtr->rotation) * deltaTime * enemyPtr->speed * scale;
     enemyPtr->position.y += cos(enemyPtr->rotation) * deltaTime * enemyPtr->speed * scale;
+
+    // Calculate bounds
+    enemyPtr->bounds = (Rectangle){
+        enemyPtr->position.x - scale,
+        enemyPtr->position.y - scale,
+        scale * 2,
+        scale * 2
+    };
+
+    // Bounds are smaller for small purple slime
+    if(enemyPtr->id == 4 && enemyPtr->state >= 2) {
+        enemyPtr->bounds = (Rectangle){
+            enemyPtr->position.x - scale / 2,
+            enemyPtr->position.y - scale / 2,
+            scale,
+            scale
+        };
+    }
 
     // Check collision
     if(CheckCollisionRecs(enemyPtr->bounds, playerRect) && enemyPtr->state != 2)
@@ -279,48 +385,13 @@ void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
                 }
             }
             break;
-    }
-}
-
-void SpawnEnemy(int id) {
-    // Find a free space for the enemy
-    int index;
-    for(index = 0; index<MAX_ENEMIES; ++index) {
-        // Break when a free space is found
-        if(enemies[index].id == 0)
-            break;
-    }
-
-    // Calculate position
-    Vector2 position = {
-        GetRandomValue(0, windowSize.x),
-        GetRandomValue(0, windowSize.y)
-    };
-    if (GetRandomValue(0, 1)) {
-        // Horizontal wall
-        position.x = GetRandomValue(0, 1) * windowSize.x;
-    }
-    else {
-        // Vertical wall
-        position.y = GetRandomValue(0, 1) * windowSize.y;
-    }
-
-    // Set the enemy
-    enemies[index].id = id;
-    enemies[index].speed = 8;
-    enemies[index].position = position;
-    enemies[index].state = 0;
-    enemies[index].timer = 0;
-    enemies[index].rotation = atan2(center.x - position.x, center.y - position.y);
-
-    // Do enemy specific customization
-    switch(id) {
-        case 2:
-            enemies[index].speed = 16;
-            break;
-        case 3:
-            break;
-        default:
+        case 4:
+            if(enemyPtr->state == 2) {
+                if(enemyPtr->timer >= 0)
+                    enemyPtr->timer -= deltaTime;
+                else
+                    enemyPtr->rotation = atan2(center.x - enemyPtr->position.x, center.y - enemyPtr->position.y);
+            }
             break;
     }
 }
@@ -409,6 +480,10 @@ void Render(float scale, float deltaTime) {
         if(!enemies[i].id)
             continue;
 
+        // Update the enemy here to save on time
+        if(!shop)
+            UpdateEnemy(&enemies[i], deltaTime, scale);
+
         // Detirmine the sprites original dimensions
         Rectangle source = {
             0,
@@ -426,14 +501,6 @@ void Render(float scale, float deltaTime) {
                 enemyTex.height
             };
         }
-        
-        // Calculate bounds
-        enemies[i].bounds = (Rectangle){
-            enemies[i].position.x - scale,
-            enemies[i].position.y - scale,
-            scale * 2,
-            scale * 2
-        };
 
         // Render the enemy
         DrawTexturePro(
@@ -453,10 +520,6 @@ void Render(float scale, float deltaTime) {
         // Draw debug lines
         if(DEBUG)
             DrawRectangleLinesEx(enemies[i].bounds, 1, RED);
-        
-        // Update the enemy here to save on time
-        if(!shop)
-            UpdateEnemy(&enemies[i], deltaTime, scale);
     }
     
     // Draw the player
@@ -505,6 +568,20 @@ void Render(float scale, float deltaTime) {
     char str[255]; // Temp string for converting int to string
     sprintf(str, "%d", score);
     DrawText(str, scale / 2, scale / 2, scale * 2, BLACK);
+
+    // Underline score with the next enemy color
+    DrawRectangle(
+        scale / 2, 
+        scale * 2.2, 
+        MeasureText(str, scale * 2), 
+        scale / 4, 
+        (Color){
+            enemyColors[enemyLevel].x,
+            enemyColors[enemyLevel].y,
+            enemyColors[enemyLevel].z,
+            255
+        }
+    );
 
     // Draw money
     sprintf(str, "%d", coins);
@@ -635,9 +712,16 @@ int main() {
         // Get the players sprite index
         sprite = (int)round(rotation / 90) % 4;
 
+        // Update the spawn time based on score
+        spawnTime = 3 - score / 50.0f;
+
+        // Don't lets enemies spawn faster than every half second
+        if(spawnTime <= 0.5f)
+            spawnTime = 0.5f;
+
         // Check if the time has elapsed the next spawn interval (and if not in shop)
         if(oldTime / spawnTime < round(oldTime / spawnTime) && GetTime() / spawnTime >= round(oldTime / spawnTime) && !shop)
-            SpawnEnemy(GetRandomValue(1, ENEMY_TYPES));
+            SpawnDefaultEnemy(GetRandomValue(1, enemyLevel + 1));
         oldTime = GetTime();
 
         // Increment the timers

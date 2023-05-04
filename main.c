@@ -1,5 +1,8 @@
+// Non-standard libraries (raylib)
 #include <raylib.h>
+#include <raymath.h>
 
+// Standard libraries
 #include <stdio.h>
 #include <math.h>
 
@@ -116,7 +119,7 @@ Bonus bonuses[] = {     // Moves that can grant the player coins
     {"Double kill", 2},
     {"Triple kill", 5},
     {"Multi kill", 10},
-    {"Milestone", 10}
+    {"Milestone", 5}
 };
 Bonus latestBonus;      // The latest bonus gained by the player
 double bonusTime = 2;   // How long to display the bonus
@@ -159,10 +162,10 @@ Line RotateLine(Line l, float rotation) {
 // Translate a Vector3 into a Color
 Color ColorFromVec3(Vector3 vec3, float alpha) {
     return (Color){
-        (unsigned char)vec3.x,
-        (unsigned char)vec3.y,
-        (unsigned char)vec3.z,
-        (unsigned char)alpha
+        (unsigned char)Clamp(vec3.x, 0, 255),
+        (unsigned char)Clamp(vec3.y, 0, 255),
+        (unsigned char)Clamp(vec3.z, 0, 255),
+        (unsigned char)Clamp(alpha, 0, 255)
     };
 }
 
@@ -297,6 +300,7 @@ void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
                 enemies[enemyIndex].timer = (float)GetRandomValue(10, 30) / 10.0f;
             }
             enemyPtr->id = 0;
+            SetScore(score + 1);
             return;
         }
 
@@ -305,11 +309,11 @@ void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
 
         // Delete enemy when 0.5s is elapsed
         if(enemyPtr->timer > 0.5f) {
-            enemyPtr->id = 0;
-
-            // Increment the players score
-            if(!died)
+            // Increment the players score (if not small purple slime)
+            if(!died && enemyPtr->id != 4)
                 SetScore(score + 1);
+            
+            enemyPtr->id = 0;
         }
         return;
     }
@@ -382,7 +386,7 @@ void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
             enemyPtr->state = 1;
             
             // Check for bonuses
-            if(Distance(center, enemyPtr->position) < scale * 3)
+            if(Distance(center, enemyPtr->position) < scale * 2.5)
                 GetBonus(0); // Close call
 
             if(killTimer < 0.3) {
@@ -416,8 +420,10 @@ void UpdateEnemy(Enemy * enemyPtr, float deltaTime, float scale) {
             if(enemyPtr->state == 2) {
                 if(enemyPtr->timer >= 0)
                     enemyPtr->timer -= deltaTime;
-                else
+                else {
+                    enemyPtr->timer = 0;
                     enemyPtr->rotation = atan2(center.x - enemyPtr->position.x, center.y - enemyPtr->position.y);
+                }
             }
             break;
         case 5:
@@ -594,7 +600,7 @@ void Render(float scale, float deltaTime) {
             0,
             ColorFromVec3(
                 enemyColors[enemies[i].id - 1], 
-                enemies[i].state == 1 ? (0.5f - enemies[i].timer) * 510 : 255
+                enemies[i].state == 1 ? (0.5f - enemies[i].timer) * 510 : 255 // Fade out a dead enemy
             )
         );
 
@@ -692,7 +698,7 @@ void Render(float scale, float deltaTime) {
         // Draw the final string
         DrawText(
             bonusStr, 
-            windowSize.x - TextLength(bonusStr) * scale / 2, 
+            windowSize.x - TextLength(bonusStr) * scale / 1.8, 
             scale * 2.5, scale, 
             (Color){200, 200, 200, (unsigned char)(255 - 120 * bonusTime)}
         );
@@ -887,11 +893,11 @@ int main() {
         deltaTime = GetFrameTime();
 
         // Update the spawn time based on score
-        spawnTime = 3 - score / 70.0f;
+        spawnTime = 3 - score / 100.0f;
 
         // Don't lets enemies spawn faster than every half second
-        if(spawnTime <= 0.5f)
-            spawnTime = 0.5f;
+        if(spawnTime <= 0.05f)
+            spawnTime = 0.05f;
 
         // Update the timers
         killTimer += deltaTime;

@@ -6,15 +6,19 @@
 #include <stdio.h>
 #include <math.h>
 
+
+// Enemy constants
 #define ENEMY_TYPES 5           // How many types of enemies there are
 #define MAX_ENEMIES 255         // Max amount of enemies allowed on screen
 
-#define DEBUG 0                 // Debug mode will show all bounding boxes
-
+// Shield constants
 #define MAX_COLLISION_LINES 4   // The max amount of collision lines a shield can have
 #define SHIELD_COUNT 4          // The amount of shield types
 
+// Other constants
+#define DEBUG 0                 // Debug mode will show all bounding boxes
 #define SHOP_ITEM_COUNT 4       // How many items in the shop
+
 
 // The enemy structure
 typedef struct Enemy {
@@ -57,6 +61,7 @@ typedef struct ShopItem {
     // ID of the shield or quantity of the hearts
     int id;
 } ShopItem;
+
 
 // Shield variables
 Shield currentShield;               // The currently selected shield
@@ -136,6 +141,8 @@ double shopTimer = 0;           // Time since shop opened (For animations)
 ShopItem shopItems[SHOP_ITEM_COUNT];
 int shopPage = 0;               // The page the player is on
 
+
+// GetBonus gives the player the specified bonus by id
 void GetBonus(int id) {
     bonusId = id;
     latestBonus = bonuses[id];
@@ -211,7 +218,7 @@ bool LineRectCollision(Line a, Rectangle b) {
     return false;
 }
 
-// SpawnEnemy is used to create new enemies, it return the new enemy's index
+// SpawnEnemy is used to create new enemies, it returns the new enemy's index
 int SpawnEnemy(int id, int state) {
     // Find a free space for the enemy
     int index;
@@ -226,13 +233,15 @@ int SpawnEnemy(int id, int state) {
         (float)GetRandomValue(0, windowSize.x),
         (float)GetRandomValue(0, windowSize.y)
     };
+
+    // Snap enemy to one of the 4 walls
     if (GetRandomValue(0, 1)) {
         // Horizontal wall
-        position.x = GetRandomValue(0, 1) * windowSize.x;
+        position.x = (GetRandomValue(0, 1) * 1.2 - 0.1) * windowSize.x; // Offset of 0.1 times the window
     }
     else {
         // Vertical wall
-        position.y = GetRandomValue(0, 1) * windowSize.y;
+        position.y = (GetRandomValue(0, 1) * 1.2 - 0.1) * windowSize.y; // Offset of 0.1 times the window
     }
 
     // Set the enemy
@@ -243,13 +252,14 @@ int SpawnEnemy(int id, int state) {
     enemies[index].timer = 0;
     enemies[index].rotation = atan2(center.x - position.x, center.y - position.y);
 
-    // Do enemy specific customization
+    // Apply enemy specific customization
     switch(id) {
+        case 3:
+            enemies[index].speed = 7;
+            break;
         case 2:
         case 5:
             enemies[index].speed = 16;
-            break;
-        default:
             break;
     }
     return index;
@@ -282,7 +292,9 @@ void SetScore(int newScore) {
     }
 }
 
+// Simple euclidian distance equation
 float Distance(Vector2 a, Vector2 b) {
+    // √ (x₁-y₁)² + (x₂-y₂)²
     return sqrtf(pow(b.x - a.x, 2) + pow(b.y - a.y, 2));
 }
 
@@ -689,7 +701,7 @@ void Render(float scale, float deltaTime) {
         // Convert the bonus' reward to as string
         sprintf(str, "%d", latestBonus.reward);
 
-        // Concatenate all the string together
+        // Concatenate all the strings together
         const char * tokens[] = {
             "+", str, " ", latestBonus.name
         };
@@ -705,7 +717,13 @@ void Render(float scale, float deltaTime) {
     }
 
     // Draw hearts
+    int remaining = hearts; // The remaining unrendered hearts
     for(int i = 0; i < hearts; ++i) {
+        if(scale / 2 + scale * i * 2 > center.x) {
+            remaining -= i;
+            break;
+        }
+
         DrawTextureEx(
             heart,
             (Vector2){scale / 2 + scale * i * 2, windowSize.y - scale * 2},
@@ -713,6 +731,17 @@ void Render(float scale, float deltaTime) {
             scale / 10,
             WHITE
         );
+    }
+
+    // Draw text for the remaining hearts
+    if(remaining != hearts) {
+        sprintf(str, "%d", remaining);
+        
+        // Concatenate the strings together
+        const char * tokens[] = {
+            "+", str
+        };
+        DrawText(TextJoin(tokens, 2, ""), center.x + scale * 1.3, windowSize.y - scale * 1.7, scale * 1.2, BLACK);
     }
 
     // If shop is open or still in animation then render it
@@ -747,13 +776,15 @@ void Render(float scale, float deltaTime) {
 // HandleInput contains all of the core user input processing code
 void HandleInput(float deltaTime) {
     // Rotate player to look at the mouse
-    rotation = 180 - round((atan2(GetMousePosition().x - center.x, GetMousePosition().y - center.y) / 3.1415)*180);
+    if(GetMouseX() >= 0 && GetMouseX() <= windowSize.x && GetMouseY() >= 0 && GetMouseY() <= windowSize.y)
+        rotation = 180 - round((atan2(GetMousePosition().x - center.x, GetMousePosition().y - center.y) / 3.1415)*180);
 
     // Space opens/closes the shop
     if(IsKeyPressed(KEY_SPACE))
         shopOpen = !shopOpen;
 }
 
+// Main method entrypoint
 int main() {
     // The time of the last frame
     float oldTime;
@@ -896,18 +927,21 @@ int main() {
         spawnTime = 3 - score / 100.0f;
 
         // Don't lets enemies spawn faster than every half second
-        if(spawnTime <= 0.05f)
-            spawnTime = 0.05f;
+        if(spawnTime <= 0.5f)
+            spawnTime = 0.5f;
 
         // Update the timers
-        killTimer += deltaTime;
-        bonusTime += deltaTime;
         if(shopOpen)
             shopTimer += deltaTime;
-        else if(shopTimer > 0) {
+        else {
             if(shopTimer > 0.2)
                 shopTimer = 0.2;
-            shopTimer -= deltaTime;
+            else if(shopTimer > 0)
+                shopTimer -= deltaTime;
+            
+            // Only update timers if unpaused
+            killTimer += deltaTime;
+            bonusTime += deltaTime;
         }
 
         // Death specific actions
@@ -920,8 +954,10 @@ int main() {
             // Update all input
             HandleInput(deltaTime);
         }
-        else
+        else if(!shopOpen)
             deathTimer += deltaTime;
+        else if(IsKeyPressed(KEY_SPACE)) // Allow user to close shop if dead
+            shopOpen = false;
 
         // Get the players sprite index
         sprite = (int)round(rotation / 90) % 4;
@@ -929,7 +965,7 @@ int main() {
         // Wait for a keypress before resetting from death
         if(died && GetKeyPressed()) {
             died = false;
-            score = 0;
+            SetScore(0);
             deathTimer = 0;
             hearts = 1;
 
